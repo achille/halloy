@@ -479,6 +479,7 @@ mod nick_list {
         theme: &'a Theme,
     ) -> Element<'a, Message> {
         let nicklist_config = &config.buffer.channel.nicklist;
+        let nickname_config = &config.buffer.nickname;
 
         let width = match nicklist_config.width {
             Some(width) => width,
@@ -487,7 +488,7 @@ mod nick_list {
                     .into_iter()
                     .flatten()
                     .map(|user| {
-                        user.display(nicklist_config.show_access_levels, None)
+                        user.display(nickname_config.show_access_levels, None)
                             .chars()
                             .count()
                     })
@@ -500,7 +501,7 @@ mod nick_list {
 
         let content = column(users.into_iter().flatten().map(|user| {
             let content = selectable_text(
-                user.display(nicklist_config.show_access_levels, None),
+                user.display(nickname_config.show_access_levels, None),
             )
             .font_maybe(
                 theme::font_style::nickname(theme, false).map(font::get),
