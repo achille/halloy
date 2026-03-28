@@ -5,10 +5,12 @@ Added:
 - <kbd>ctrl</kbd> + <kbd>,</kbd> now opens the config file (<kbd>⌘</kbd> + <kbd>,</kbd> on macOs)
 - Windows MSI installer does not automatically start Halloy during passive or quiet installations
 - Per-server `typing` settings (`servers.<name>.typing`)
+- `buffer.nickname.color` now supports `{ palette = ["#RRGGBB", ...] }` for nickname colors from a fixed set
 
 Changed:
 
 - Moved `typing` settings from `buffer.channel.typing` to `buffer.typing` to clarify that they appliy to queries as well as channels
+- Moved nicklist nickname settings from `buffer.channel.nicklist` to `buffer.nickname` (`away`, `color`, and `show_access_levels`)
 
 Fixed:
 
@@ -19,6 +21,9 @@ Fixed:
 - Keyboard shortcuts now work in popped out buffer windows, including command bar shortcuts
 - IRC URIs now handle bracketed IPv6 hosts and percent-encoded channel targets correctly
 - `typing` settings for buffers could get in a stuck state without any way to control them
+
+Removed:
+- `buffer.channel.message.nickname_color` in favor of `buffer.nickname.color`
 
 Thanks:
 
