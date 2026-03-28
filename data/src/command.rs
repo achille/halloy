@@ -107,11 +107,15 @@ impl Irc {
         casemapping: isupport::CaseMap,
         supports_echoes: bool,
     ) -> Option<Vec<Message>> {
-        let to_targets = |target: &str, source| {
+        let to_message_target = |target: &str, source| {
+            if target == "*" || target.starts_with('$') {
+                return message::Target::Server { source };
+            }
+
             let target =
                 Target::parse(target, chantypes, statusmsg, casemapping);
 
-            let message_target = match &target {
+            match &target {
                 Target::Channel(channel) => message::Target::Channel {
                     channel: channel.clone(),
                     source,
@@ -121,9 +125,7 @@ impl Irc {
                     query: query.clone(),
                     source,
                 },
-            };
-
-            (target, message_target)
+            }
         };
 
         match self {
@@ -131,7 +133,7 @@ impl Irc {
                 targets
                     .split(',')
                     .map(|target| {
-                        let (target, message_target) = to_targets(
+                        let message_target = to_message_target(
                             target,
                             message::Source::User(user.clone()),
                         );
@@ -155,7 +157,7 @@ impl Irc {
                 targets
                     .split(',')
                     .map(|target| {
-                        let (target, message_target) = to_targets(
+                        let message_target = to_message_target(
                             target,
                             message::Source::User(user.clone()),
                         );
@@ -176,7 +178,7 @@ impl Irc {
                     .collect(),
             ),
             Irc::Me(target, action) => {
-                let (_, message_target) = to_targets(
+                let message_target = to_message_target(
                     target,
                     message::Source::Action(Some(user.clone())),
                 );

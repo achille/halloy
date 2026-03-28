@@ -2232,7 +2232,7 @@ fn target(
                 }
             };
 
-            if target == "*" {
+            if target == "*" || target.starts_with('$') {
                 let source = user.map_or(Source::Server(None), source);
 
                 return Some((Target::Server { source }, None));
