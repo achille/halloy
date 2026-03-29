@@ -9,10 +9,12 @@ Added:
 - `buffer.server_messages.away` theme setting to control how automated away messages appear
 - Drafts are remembered across Halloy sessions. Can be disabled with `buffer.text_input.persist`
 - Animate typing dots
+- `buffer.typing.style` setting with `padded` and `popped` modes for typing indicators
 
 Changed:
 
 - Moved `typing` settings from `buffer.channel.typing` to `buffer.typing` to clarify that they appliy to queries as well as channels
+- Default typing style is now `popped`
 
 Fixed:
 
