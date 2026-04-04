@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::mem::take;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -32,6 +32,7 @@ use crate::rate_limit::{BackoffInterval, TokenBucket, TokenPriority};
 use crate::target::{self, Target};
 use crate::time::Posix;
 use crate::user::{ChannelUsers, Nick, NickRef};
+use crate::whois::{WhoisCache, WhoisData};
 use crate::{
     Server, User, buffer, channel_discovery, compression, config, ctcp, dcc,
     environment, file_transfer, history, isupport, message, mode, server,
@@ -136,6 +137,7 @@ pub enum Event {
     OnConnect(on_connect::Stream),
     BouncerNetwork(Server, config::Server),
     AddToSidebar(target::Query),
+    WhoisReady(Nick),
     Disconnect(Option<String>),
 }
 
@@ -177,6 +179,9 @@ pub struct Client {
     mode_requests: Vec<ModeRequest>,
     channel_discovery_manager: channel_discovery::Manager,
     preview_proxy_client: Option<Arc<reqwest::Client>>,
+    whois_cache: WhoisCache,
+    pending_whois: HashMap<String, WhoisData>,
+    hidden_whois_requests: HashSet<String>,
 }
 
 impl fmt::Debug for Client {
@@ -243,6 +248,9 @@ impl Client {
             anti_flood: Some(TokenBucket::new(config.anti_flood, 10)),
             mode_requests: Vec::new(),
             preview_proxy_client: preview_proxy_client.map(Arc::new),
+            whois_cache: WhoisCache::default(),
+            pending_whois: HashMap::new(),
+            hidden_whois_requests: HashSet::new(),
             config,
             channel_discovery_manager: channel_discovery::Manager::new(),
         }
@@ -514,6 +522,12 @@ impl Client {
         mut message: message::Encoded,
         priority: TokenPriority,
     ) {
+        if let Command::WHOIS(_, nicks) = &message.command {
+            for nick in nicks.split(',').filter(|nick| !nick.is_empty()) {
+                self.track_whois_request(nick, false);
+            }
+        }
+
         if let Some(buffer) = buffer {
             if self.capabilities.acknowledged(Capability::LabeledResponse) {
                 let label = generate_label();
@@ -588,6 +602,19 @@ impl Client {
             anti_flood.add_token(message, priority);
         } else if let Err(e) = self.handle.try_send(message.into()) {
             log::warn!("[{}] Error sending message: {e}", self.server);
+        }
+    }
+
+    fn track_whois_request(&mut self, nick: &str, hidden: bool) {
+        let casemapping = self.casemapping();
+        let key = casemapping.normalize(nick);
+
+        self.pending_whois
+            .entry(key.clone())
+            .or_insert_with(|| WhoisData::new(nick));
+
+        if hidden {
+            self.hidden_whois_requests.insert(key);
         }
     }
 
@@ -767,6 +794,11 @@ impl Client {
                     })
                 })
         });
+
+        let whois_update = self.update_whois(&message.command);
+        let whois_hidden =
+            whois_update.as_ref().is_some_and(|(hidden, _)| *hidden);
+        let mut whois_event = whois_update.and_then(|(_, event)| event);
 
         macro_rules! ok {
             ($option:expr) => {
@@ -1026,11 +1058,17 @@ impl Client {
                     .map(Context::buffer)
                     .map(|buffer| buffer.server_message_target(None))
                 {
-                    return Ok(vec![Event::WithTarget(
+                    let mut events = vec![Event::WithTarget(
                         message,
                         self.nickname().to_owned(),
                         source,
-                    )]);
+                    )];
+
+                    if let Some(event) = whois_event.take() {
+                        events.push(event);
+                    }
+
+                    return Ok(events);
                 }
             }
             _ if is_reaction(&message) => {
@@ -1054,12 +1092,21 @@ impl Client {
                     .clone()
                     .map(|buffer| buffer.server_message_target(None))
                 {
-                    return Ok(vec![Event::WithTarget(
+                    let mut events = vec![Event::WithTarget(
                         message,
                         self.nickname().to_owned(),
                         source,
-                    )]);
+                    )];
+
+                    if let Some(event) = whois_event.take() {
+                        events.push(event);
+                    }
+
+                    return Ok(events);
                 }
+            }
+            _ if whois_hidden => {
+                return Ok(whois_event.take().into_iter().collect());
             }
             Command::BOUNCER(subcommand, params) if subcommand == "NETWORK" => {
                 if !self.is_primary() {
@@ -2940,6 +2987,10 @@ impl Client {
             _ => {}
         }
 
+        if let Some(event) = whois_event {
+            return Ok(vec![event]);
+        }
+
         Ok(vec![Event::Single(message, self.nickname().to_owned())])
     }
 
@@ -3578,6 +3629,29 @@ impl Client {
         self.chanmap.keys()
     }
 
+    pub fn whois_cache(&self) -> &WhoisCache {
+        &self.whois_cache
+    }
+
+    pub fn request_whois(&mut self, nick: NickRef<'_>) {
+        self.whois_cache.evict_expired();
+
+        if self.whois_cache.get(nick, self.casemapping()).is_some() {
+            return;
+        }
+
+        if self.pending_whois.contains_key(nick.as_normalized_str()) {
+            return;
+        }
+
+        self.track_whois_request(nick.as_str(), true);
+        self.send(
+            None,
+            command!("WHOIS", nick.as_str()).into(),
+            TokenPriority::Low,
+        );
+    }
+
     fn topic<'a>(&'a self, channel: &target::Channel) -> Option<&'a Topic> {
         self.chanmap.get(channel).map(|channel| &channel.topic)
     }
@@ -3771,6 +3845,8 @@ impl Client {
     }
 
     pub fn tick(&mut self, now: Instant) -> Result<()> {
+        self.whois_cache.evict_expired();
+
         match self.notification_blackout {
             NotificationBlackout::Blackout(instant) => {
                 if now.duration_since(instant) >= HIGHLIGHT_BLACKOUT_INTERVAL {
@@ -4007,6 +4083,57 @@ impl Client {
     pub fn multiline_limits(&self) -> Option<MultilineLimits> {
         self.capabilities.multiline_limits()
     }
+
+    fn update_whois(
+        &mut self,
+        command: &Command,
+    ) -> Option<(bool, Option<Event>)> {
+        use irc::proto::command::Numeric::*;
+
+        let nick = whois_nick(command)?;
+        let casemapping = self.casemapping();
+        let key = casemapping.normalize(nick);
+        let hidden = self.hidden_whois_requests.contains(&key);
+
+        match command {
+            Command::Numeric(RPL_AWAY, _)
+                if !self.pending_whois.contains_key(&key) =>
+            {
+                return None;
+            }
+            Command::Numeric(RPL_ENDOFWHOIS, _) => {
+                let data = self
+                    .pending_whois
+                    .remove(&key)
+                    .unwrap_or_else(|| WhoisData::new(nick));
+
+                self.hidden_whois_requests.remove(&key);
+                self.whois_cache.insert(data.clone(), casemapping);
+
+                return Some((
+                    hidden,
+                    Some(Event::WhoisReady(Nick::from_str(
+                        &data.nickname,
+                        casemapping,
+                    ))),
+                ));
+            }
+            Command::Numeric(ERR_NOSUCHNICK | ERR_NOSUCHSERVER, _) => {
+                self.pending_whois.remove(&key);
+                self.hidden_whois_requests.remove(&key);
+
+                return Some((hidden, None));
+            }
+            _ => {}
+        }
+
+        let entry = self
+            .pending_whois
+            .entry(key)
+            .or_insert_with(|| WhoisData::new(nick));
+
+        entry.apply(command).then_some((hidden, None))
+    }
 }
 
 fn compare_channels_default(chantypes: &[char], a: &str, b: &str) -> Ordering {
@@ -4085,6 +4212,26 @@ fn is_reaction(message: &message::Encoded) -> bool {
             || message.tags.contains_key("+draft/unreact"))
 }
 
+fn whois_nick(command: &Command) -> Option<&str> {
+    use irc::proto::command::Numeric::*;
+
+    match command {
+        Command::Numeric(
+            RPL_WHOISCERTFP | RPL_WHOISREGNICK | RPL_WHOISUSER
+            | RPL_WHOISSERVER | RPL_WHOISOPERATOR | RPL_WHOISIDLE
+            | RPL_WHOISCHANNELS | RPL_WHOISSPECIAL | RPL_WHOISACCOUNT
+            | RPL_WHOISACTUALLY | RPL_WHOISHOST | RPL_WHOISMODES
+            | RPL_WHOISSECURE | RPL_ENDOFWHOIS | ERR_NOSUCHNICK
+            | ERR_NOSUCHSERVER,
+            params,
+        )
+        | Command::Numeric(RPL_AWAY, params) => {
+            params.get(1).map(String::as_str)
+        }
+        _ => None,
+    }
+}
+
 fn continue_chathistory_between(
     target: &Target,
     events: &[Event],
@@ -4119,6 +4266,7 @@ fn continue_chathistory_between(
             | Event::OnConnect(_)
             | Event::BouncerNetwork(_, _)
             | Event::AddToSidebar(_)
+            | Event::WhoisReady(_)
             | Event::Disconnect(_) => None,
         });
 
@@ -4159,6 +4307,7 @@ fn continue_chathistory_targets(
             | Event::OnConnect(_)
             | Event::BouncerNetwork(_, _)
             | Event::AddToSidebar(_)
+            | Event::WhoisReady(_)
             | Event::Disconnect(_) => None,
         });
 
@@ -4376,6 +4525,36 @@ impl Map {
         channel: &target::Channel,
     ) -> Option<&ChannelUsers> {
         self.client(server).and_then(|client| client.users(channel))
+    }
+
+    pub fn whois_cache(&self, server: &Server) -> Option<&WhoisCache> {
+        self.client(server).map(Client::whois_cache)
+    }
+
+    pub fn request_whois(&mut self, server: &Server, nick: NickRef<'_>) {
+        if let Some(client) = self.client_mut(server) {
+            client.request_whois(nick);
+        }
+    }
+
+    pub fn join_channel(&mut self, server: &Server, channel: &str) {
+        if let Some(client) = self.client_mut(server) {
+            client.send(
+                None,
+                command!("JOIN", channel).into(),
+                TokenPriority::User,
+            );
+        }
+    }
+
+    pub fn list_channels(&mut self, server: &Server) {
+        if let Some(client) = self.client_mut(server) {
+            client.send(
+                None,
+                command!("LIST").into(),
+                TokenPriority::User,
+            );
+        }
     }
 
     pub fn get_user_channels(

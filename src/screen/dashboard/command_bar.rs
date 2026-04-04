@@ -1,3 +1,4 @@
+use data::server::Server;
 use data::{Config, buffer};
 use iced::Length;
 use iced::widget::{column, container, text};
@@ -22,6 +23,7 @@ pub enum Message {
 impl CommandBar {
     pub fn new(
         buffers: &[buffer::Upstream],
+        servers: Vec<Server>,
         version: &data::Version,
         config: &Config,
         focus: Focus,
@@ -30,6 +32,7 @@ impl CommandBar {
     ) -> Self {
         let state = combo_box::State::new(Command::list(
             buffers,
+            &servers,
             config,
             focus,
             resize_buffer,
@@ -43,7 +46,20 @@ impl CommandBar {
 
     pub fn update(&mut self, message: Message) -> Option<Event> {
         match message {
-            Message::Command(command) => Some(Event::Command(command)),
+            Message::Command(command) => {
+                let command = match command {
+                    Command::Channel(Channel::Join(server)) => {
+                        let channel = parse_channel_from_input(
+                            &self.state.value(),
+                        );
+                        Some(Event::Command(Command::Channel(
+                            Channel::JoinResolved(server, channel),
+                        )))
+                    }
+                    other => Some(Event::Command(other)),
+                };
+                command
+            }
             Message::Hovered(Command::Theme(Theme::Switch(theme))) => {
                 Some(Event::ThemePreview(Some(theme)))
             }
@@ -95,6 +111,7 @@ impl CommandBar {
                 .chain(
                     Command::list(
                         buffers,
+                        &[],
                         config,
                         focus,
                         resize_buffer,
@@ -133,6 +150,7 @@ pub enum Command {
     Buffer(Buffer),
     Configuration(Configuration),
     Theme(Theme),
+    Channel(Channel),
 }
 
 #[derive(Debug, Clone)]
@@ -176,9 +194,17 @@ pub enum Theme {
     OpenThemesWebsite,
 }
 
+#[derive(Debug, Clone)]
+pub enum Channel {
+    Join(Server),
+    JoinResolved(Server, String),
+    List(Server),
+}
+
 impl Command {
     pub fn list(
         buffers: &[buffer::Upstream],
+        servers: &[Server],
         config: &Config,
         focus: Focus,
         resize_buffer: data::buffer::Resize,
@@ -200,8 +226,16 @@ impl Command {
         let application =
             Application::list().into_iter().map(Command::Application);
 
+        let channels = servers.iter().flat_map(|server| {
+            [
+                Command::Channel(Channel::Join(server.clone())),
+                Command::Channel(Channel::List(server.clone())),
+            ]
+        });
+
         version
             .chain(application)
+            .chain(channels)
             .chain(buffers)
             .chain(configs)
             .chain(themes)
@@ -223,6 +257,7 @@ impl std::fmt::Display for Command {
             Command::Application(application) => {
                 write!(f, "Application: {application}")
             }
+            Command::Channel(channel) => write!(f, "Channel: {channel}"),
         }
     }
 }
@@ -403,5 +438,40 @@ impl std::fmt::Display for Theme {
                 write!(f, "Discover more themes (Opens website)")
             }
         }
+    }
+}
+
+impl std::fmt::Display for Channel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Channel::Join(server) => {
+                write!(f, "Join channel on {server}")
+            }
+            Channel::JoinResolved(server, channel) => {
+                write!(f, "Join {channel} on {server}")
+            }
+            Channel::List(server) => {
+                write!(f, "List channels on {server}")
+            }
+        }
+    }
+}
+
+fn parse_channel_from_input(input: &str) -> String {
+    // Extract channel name from typed text like "join test", "join #test",
+    // "channel join test", etc.
+    let input_lower = input.to_lowercase();
+    let channel = input_lower
+        .split_whitespace()
+        .find(|word| {
+            *word != "join" && *word != "channel:" && *word != "channel"
+        })
+        .unwrap_or("unknown")
+        .to_string();
+
+    if channel.starts_with('#') {
+        channel
+    } else {
+        format!("#{channel}")
     }
 }

@@ -14,6 +14,7 @@ use data::rate_limit::TokenPriority;
 use data::reaction::Reaction;
 use data::server::Server;
 use data::target::{self, Target};
+use data::user::Nick;
 use data::{Config, Preview, client, history, reaction};
 use iced::widget::{
     self, Scrollable, button, center, column, container, image, mouse_area,
@@ -56,6 +57,7 @@ pub enum Message {
     ExitingViewport(message::Hash),
     PreviewHovered(message::Hash, usize),
     PreviewUnhovered(message::Hash, usize),
+    HoveredNickname(Server, Nick),
     HidePreview(message::Hash, url::Url),
     MarkAsRead,
     ContentResized(Size),
@@ -86,6 +88,7 @@ pub enum Event {
     PreviewChanged,
     HidePreview(history::Kind, message::Hash, url::Url),
     MarkAsRead,
+    RequestWhois(Server, Nick),
     OpenUrl(String),
     ImagePreview(PathBuf, url::Url),
     ExpandCondensedMessage(DateTime<Utc>, message::Hash),
@@ -1080,6 +1083,9 @@ impl State {
                 {
                     self.hovered_preview = None;
                 }
+            }
+            Message::HoveredNickname(server, nick) => {
+                return (Task::none(), Some(Event::RequestWhois(server, nick)));
             }
             Message::HidePreview(message, url) => {
                 return (

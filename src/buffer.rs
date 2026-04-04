@@ -75,6 +75,7 @@ pub enum Event {
     PreviewChanged,
     HidePreview(history::Kind, message::Hash, url::Url),
     MarkAsRead(history::Kind),
+    RequestWhois(data::Server, Nick),
     OpenUrl(String),
     ImagePreview(PathBuf, url::Url),
     ExpandCondensedMessage(DateTime<Utc>, message::Hash),
@@ -285,6 +286,9 @@ impl Buffer {
                         Event::HidePreview(kind, hash, url)
                     }
                     channel::Event::MarkAsRead(kind) => Event::MarkAsRead(kind),
+                    channel::Event::RequestWhois(server, nick) => {
+                        Event::RequestWhois(server, nick)
+                    }
                     channel::Event::OpenUrl(url) => Event::OpenUrl(url),
                     channel::Event::ImagePreview(path, url) => {
                         Event::ImagePreview(path, url)
@@ -396,6 +400,9 @@ impl Buffer {
                         Event::HidePreview(kind, hash, url)
                     }
                     query::Event::MarkAsRead(kind) => Event::MarkAsRead(kind),
+                    query::Event::RequestWhois(server, nick) => {
+                        Event::RequestWhois(server, nick)
+                    }
                     query::Event::OpenUrl(url) => Event::OpenUrl(url),
                     query::Event::ImagePreview(path, url) => {
                         Event::ImagePreview(path, url)

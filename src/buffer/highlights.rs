@@ -339,6 +339,7 @@ impl Highlights {
                     scroll_view::Event::PreviewChanged => None,
                     scroll_view::Event::HidePreview(..) => None,
                     scroll_view::Event::MarkAsRead => None,
+                    scroll_view::Event::RequestWhois(_, _) => None,
                     scroll_view::Event::OpenUrl(url) => {
                         Some(Event::OpenUrl(url))
                     }

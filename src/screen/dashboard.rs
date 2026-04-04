@@ -606,6 +606,7 @@ impl Dashboard {
                     sidebar::Event::ToggleCommandBar => (
                         self.toggle_command_bar(
                             &closed_buffers(self, clients),
+                            clients,
                             version,
                             config,
                             theme,
@@ -1070,6 +1071,17 @@ impl Dashboard {
                                     (Task::none(), None)
                                 }
                             },
+                            command_bar::Command::Channel(command) => match command {
+                                command_bar::Channel::JoinResolved(server, channel) => {
+                                    clients.join_channel(&server, &channel);
+                                    (Task::none(), None)
+                                }
+                                command_bar::Channel::Join(_) => (Task::none(), None),
+                                command_bar::Channel::List(server) => {
+                                    clients.list_channels(&server);
+                                    (Task::none(), None)
+                                }
+                            },
                         };
 
                         return (
@@ -1077,6 +1089,7 @@ impl Dashboard {
                                 command,
                                 self.toggle_command_bar(
                                     &closed_buffers(self, clients),
+                                    clients,
                                     version,
                                     config,
                                     theme,
@@ -1089,6 +1102,7 @@ impl Dashboard {
                         return (
                             self.toggle_command_bar(
                                 &closed_buffers(self, clients),
+                                clients,
                                 version,
                                 config,
                                 theme,
@@ -1262,6 +1276,7 @@ impl Dashboard {
                         return (
                             self.toggle_command_bar(
                                 &closed_buffers(self, clients),
+                                clients,
                                 version,
                                 config,
                                 theme,
@@ -2464,6 +2479,9 @@ impl Dashboard {
                     TokenPriority::User,
                 );
             }
+            buffer::Event::RequestWhois(server, nick) => {
+                clients.request_whois(&server, nick.as_nickref());
+            }
             buffer::Event::OpenUrl(url) => {
                 return (
                     Task::none(),
@@ -2575,6 +2593,7 @@ impl Dashboard {
                 if self.command_bar_window == Some(window) {
                     self.toggle_command_bar(
                         &closed_buffers(self, clients),
+                        clients,
                         version,
                         config,
                         theme,
@@ -3673,10 +3692,14 @@ impl Dashboard {
     pub fn toggle_command_bar(
         &mut self,
         buffers: &[buffer::Upstream],
+        clients: &client::Map,
         version: &Version,
         config: &Config,
         theme: &mut Theme,
     ) -> Task<Message> {
+        let servers: Vec<data::Server> =
+            clients.servers().cloned().collect();
+
         match self.command_bar_window {
             Some(window) if window == self.focus.window => {
                 // Remove theme preview
@@ -3691,12 +3714,12 @@ impl Dashboard {
                 *theme = theme.selected();
 
                 self.close_command_bar();
-                self.open_command_bar(buffers, version, config);
+                self.open_command_bar(buffers, servers, version, config);
 
                 Task::none()
             }
             None => {
-                self.open_command_bar(buffers, version, config);
+                self.open_command_bar(buffers, servers, version, config);
                 Task::none()
             }
         }
@@ -3705,12 +3728,14 @@ impl Dashboard {
     fn open_command_bar(
         &mut self,
         buffers: &[buffer::Upstream],
+        servers: Vec<data::Server>,
         version: &Version,
         config: &Config,
     ) {
         self.command_bar_window = Some(self.focus.window);
         self.command_bar = Some(CommandBar::new(
             buffers,
+            servers,
             version,
             config,
             self.focus,

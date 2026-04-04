@@ -55,4 +55,5 @@ pub mod time;
 pub mod url;
 pub mod user;
 pub mod version;
+pub mod whois;
 pub mod window;

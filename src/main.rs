@@ -1601,6 +1601,7 @@ fn handle_client_events(
             Event::AddToSidebar(query) => {
                 dashboard.add_to_sidebar(server.clone(), query);
             }
+            Event::WhoisReady(_) => {}
             Event::Disconnect(error) => {
                 for bouncer_network in servers.get_bouncer_networks(server) {
                     controllers.disconnect(bouncer_network, error.clone());

@@ -35,6 +35,7 @@ pub enum Event {
     PreviewChanged,
     HidePreview(history::Kind, message::Hash, url::Url),
     MarkAsRead(history::Kind),
+    RequestWhois(Server, Nick),
     OpenUrl(String),
     ImagePreview(PathBuf, url::Url),
     ExpandCondensedMessage(DateTime<Utc>, message::Hash),
@@ -97,6 +98,7 @@ pub fn view<'a>(
         server,
         theme,
         previews,
+        whois_cache: clients.whois_cache(server),
         target: TargetInfo::Query,
     };
 
@@ -252,6 +254,9 @@ impl Query {
                             self.buffer.clone(),
                         ))
                         .map(Event::MarkAsRead)
+                    }
+                    scroll_view::Event::RequestWhois(server, nick) => {
+                        Some(Event::RequestWhois(server, nick))
                     }
                     scroll_view::Event::OpenUrl(url) => {
                         Some(Event::OpenUrl(url))

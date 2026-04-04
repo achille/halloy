@@ -283,7 +283,20 @@ where
         inner.text_input.is_focused()
     }
 
-    fn value(&self) -> String {
+    /// Replace the options list and refilter against the current value.
+    pub fn set_options(&self, options: Vec<T>) {
+        let mut inner = self.0.borrow_mut();
+        let option_matchers = build_matchers(&options);
+        inner.filtered_options = Filtered::new(
+            search(&options, &option_matchers, &inner.value)
+                .cloned()
+                .collect(),
+        );
+        inner.options = options;
+        inner.option_matchers = option_matchers;
+    }
+
+    pub fn value(&self) -> String {
         let inner = self.0.borrow();
 
         inner.value.clone()

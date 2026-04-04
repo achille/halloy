@@ -26,6 +26,7 @@ pub enum Message {
     InputView(input_view::Message),
     ContextMenu(context_menu::Message),
     Topic(topic::Message),
+    RequestWhois(Server, Nick),
 }
 
 pub enum Event {
@@ -40,6 +41,7 @@ pub enum Event {
     PreviewChanged,
     HidePreview(history::Kind, message::Hash, url::Url),
     MarkAsRead(history::Kind),
+    RequestWhois(Server, Nick),
     OpenUrl(String),
     ImagePreview(PathBuf, url::Url),
     ExpandCondensedMessage(DateTime<Utc>, message::Hash),
@@ -111,6 +113,7 @@ pub fn view<'a>(
         server,
         theme,
         previews,
+        whois_cache: clients.whois_cache(server),
         target: TargetInfo::Channel {
             users,
             channel,
@@ -149,9 +152,16 @@ pub fn view<'a>(
     .height(Length::Fill);
 
     let nick_list = nick_list::view(
-        server, prefix, channel, users, our_user, config, theme,
-    )
-    .map(Message::ContextMenu);
+        server,
+        prefix,
+        channel,
+        users,
+        our_user,
+        config,
+        theme,
+        clients.whois_cache(server),
+        casemapping,
+    );
 
     // If topic toggles from None to Some then it messes with messages' scroll state,
     // so produce a zero-height placeholder when topic is None.
@@ -304,6 +314,9 @@ impl Channel {
                         ))
                         .map(Event::MarkAsRead)
                     }
+                    scroll_view::Event::RequestWhois(server, nick) => {
+                        Some(Event::RequestWhois(server, nick))
+                    }
                     scroll_view::Event::OpenUrl(url) => {
                         Some(Event::OpenUrl(url))
                     }
@@ -382,6 +395,9 @@ impl Channel {
                 Task::none(),
                 Some(Event::ContextMenu(context_menu::update(message))),
             ),
+            Message::RequestWhois(server, nick) => {
+                (Task::none(), Some(Event::RequestWhois(server, nick)))
+            }
             Message::Topic(message) => (
                 Task::none(),
                 topic::update(message).map(|event| match event {
@@ -494,15 +510,17 @@ fn topic<'a>(
 }
 
 mod nick_list {
-    use context_menu::Message;
     use data::user::ChannelUsers;
+    use data::whois::WhoisCache;
     use data::{Config, Server, User, config, isupport, target};
     use iced::Length;
     use iced::advanced::text;
-    use iced::widget::{Scrollable, column, scrollable};
+    use iced::widget::{Scrollable, column, mouse_area, scrollable};
 
+    use super::Message;
     use crate::buffer::context_menu;
-    use crate::widget::{Element, selectable_text};
+    use crate::buffer::message_view::format_whois_tooltip;
+    use crate::widget::{Element, selectable_text, tooltip};
     use crate::{Theme, font, theme};
 
     pub fn view<'a>(
@@ -513,6 +531,8 @@ mod nick_list {
         our_user: Option<&'a User>,
         config: &'a Config,
         theme: &'a Theme,
+        whois_cache: Option<&'a WhoisCache>,
+        casemapping: isupport::CaseMap,
     ) -> Element<'a, Message> {
         let nicklist_config = &config.buffer.channel.nicklist;
 
@@ -554,7 +574,17 @@ mod nick_list {
             })
             .width(Length::Fixed(width));
 
-            context_menu::user(
+            let whois_tooltip = whois_cache
+                .and_then(|cache| cache.get(user.nickname(), casemapping))
+                .map(format_whois_tooltip);
+            let request_whois = whois_tooltip.is_none().then(|| {
+                Message::RequestWhois(
+                    server.clone(),
+                    user.nickname().to_owned(),
+                )
+            });
+
+            let entry: Element<'a, Message> = context_menu::user(
                 content,
                 server,
                 prefix,
@@ -565,6 +595,20 @@ mod nick_list {
                 config,
                 theme,
                 &config.buffer.channel.nicklist.click,
+            )
+            .map(Message::ContextMenu);
+
+            let entry = if let Some(request_whois) = request_whois {
+                mouse_area(entry).on_enter(request_whois).into()
+            } else {
+                entry
+            };
+
+            tooltip(
+                entry,
+                whois_tooltip,
+                tooltip::Position::Left,
+                theme,
             )
         }));
 

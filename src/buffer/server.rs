@@ -268,6 +268,7 @@ impl Server {
                         ))
                         .map(Event::MarkAsRead)
                     }
+                    scroll_view::Event::RequestWhois(_, _) => None,
                     scroll_view::Event::OpenUrl(url) => {
                         Some(Event::OpenUrl(url))
                     }

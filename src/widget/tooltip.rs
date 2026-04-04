@@ -6,7 +6,7 @@ use crate::{Theme, font, theme};
 
 pub fn tooltip<'a, Message: 'a>(
     content: impl Into<Element<'a, Message>>,
-    tooltip: Option<&'a str>,
+    tooltip: Option<impl iced::widget::text::IntoFragment<'a>>,
     position: Position,
     theme: &'a Theme,
 ) -> Element<'a, Message> {

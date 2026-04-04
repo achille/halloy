@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use data::config::buffer::nickname::ShownStatus;
@@ -7,8 +8,9 @@ use data::isupport::{CaseMap, PrefixMap};
 use data::preview::{self, Previews};
 use data::server::Server;
 use data::user::{ChannelUsers, NickRef};
+use data::whois::{WhoisCache, WhoisData};
 use data::{Config, User, message, target};
-use iced::widget::{Space, button, column, container, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Color, Length, alignment};
 
 use super::context_menu::{self, Context};
@@ -70,6 +72,7 @@ pub struct ChannelQueryLayout<'a> {
     pub server: &'a Server,
     pub theme: &'a Theme,
     pub previews: Option<Previews<'a>>,
+    pub whois_cache: Option<&'a WhoisCache>,
     pub target: TargetInfo<'a>,
 }
 
@@ -401,6 +404,19 @@ impl<'a> ChannelQueryLayout<'a> {
 
         let nick_text =
             self.config.buffer.nickname.brackets.format(user_display);
+        let whois_tooltip = self
+            .whois_cache
+            .and_then(|cache| cache.get(user.nickname(), self.casemapping))
+            .map(format_whois_tooltip);
+        let request_whois = whois_tooltip.is_none().then(|| {
+            Message::HoveredNickname(
+                self.server.clone(),
+                user.nickname().to_owned(),
+            )
+        });
+        let nickname_tooltip = whois_tooltip.or_else(|| {
+            show_nickname_tooltip.then(|| user.as_str().to_owned())
+        });
 
         let nick_element: Element<_> = if hide_nickname {
             let width = match self.config.buffer.nickname.alignment {
@@ -427,21 +443,28 @@ impl<'a> ChannelQueryLayout<'a> {
                     nick_text.width(width).align_x(text::Alignment::Right);
             }
 
+            let nick = context_menu::user(
+                nick_text,
+                self.server,
+                self.prefix,
+                self.target.channel(),
+                user,
+                user_in_channel,
+                self.target.our_user(),
+                self.config,
+                self.theme,
+                &self.config.buffer.nickname.click,
+            )
+            .map(Message::ContextMenu);
+            let nick = if let Some(request_whois) = request_whois {
+                mouse_area(nick).on_enter(request_whois).into()
+            } else {
+                nick
+            };
+
             tooltip(
-                context_menu::user(
-                    nick_text,
-                    self.server,
-                    self.prefix,
-                    self.target.channel(),
-                    user,
-                    user_in_channel,
-                    self.target.our_user(),
-                    self.config,
-                    self.theme,
-                    &self.config.buffer.nickname.click,
-                )
-                .map(Message::ContextMenu),
-                show_nickname_tooltip.then_some(user.as_str()),
+                nick,
+                nickname_tooltip,
                 tooltip::Position::Bottom,
                 self.theme,
             )
@@ -797,6 +820,59 @@ impl<'a> ChannelQueryLayout<'a> {
             })
         }
     }
+}
+
+pub(super) fn format_whois_tooltip(whois: &WhoisData) -> String {
+    let mut lines = vec![whois.nickname.clone()];
+
+    match (whois.username.as_deref(), whois.hostname.as_deref()) {
+        (Some(username), Some(hostname)) => {
+            lines.push(format!("{username}@{hostname}"));
+        }
+        (Some(username), None) => lines.push(format!("User: {username}")),
+        (None, Some(hostname)) => lines.push(format!("Host: {hostname}")),
+        (None, None) => {}
+    }
+
+    if let Some(real_name) = &whois.real_name {
+        lines.push(real_name.clone());
+    }
+
+    match (whois.server.as_deref(), whois.server_info.as_deref()) {
+        (Some(server), Some(server_info)) => {
+            lines.push(format!("Server: {server} ({server_info})"));
+        }
+        (Some(server), None) => lines.push(format!("Server: {server}")),
+        (None, Some(server_info)) => {
+            lines.push(format!("Server: {server_info}"));
+        }
+        (None, None) => {}
+    }
+
+    if !whois.channels.is_empty() {
+        lines.push(format!("Channels: {}", whois.channels.join(" ")));
+    }
+
+    if let Some(account) = &whois.account {
+        lines.push(format!("Account: {account}"));
+    }
+
+    if let Some(idle_secs) = whois.idle_secs {
+        lines.push(format!(
+            "Idle: {}",
+            humantime::format_duration(Duration::from_secs(idle_secs))
+        ));
+    }
+
+    if whois.secure {
+        lines.push(String::from("Secure: yes"));
+    }
+
+    if let Some(away_message) = &whois.away_message {
+        lines.push(format!("Away: {away_message}"));
+    }
+
+    lines.join("\n")
 }
 
 impl<'a> LayoutMessage<'a> for ChannelQueryLayout<'a> {
