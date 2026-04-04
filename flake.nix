@@ -3,17 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    crane.url = "github:ipetkov/crane";
   };
 
   outputs =
     {
       self,
       nixpkgs,
-      rust-overlay,
+      crane,
     }:
     let
       systems = [
@@ -23,22 +20,21 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
-    in
-    {
-      packages = forAllSystems (
+
+      version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
+
+      perSystem = forAllSystems (
         system:
         let
           pkgs = import nixpkgs {
             inherit system;
-            overlays = [ rust-overlay.overlays.default ];
           };
 
-          rustToolchain = pkgs.rust-bin.stable.latest.default;
+          craneLib = crane.mkLib pkgs;
 
           isDarwin = pkgs.stdenv.isDarwin;
 
           nativeBuildInputs = [
-            rustToolchain
             pkgs.pkg-config
             pkgs.cmake
           ];
@@ -61,20 +57,13 @@
               pkgs.xorg.libXi
             ];
 
-          version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
-
-          halloy = pkgs.rustPlatform.buildRustPackage {
-            pname = "halloy";
-            inherit version;
+          commonArgs = {
+            # The build embeds fonts, sounds, and theme assets outside the
+            # default cargo file set, so keep the broader project source filter.
             src = pkgs.lib.cleanSource ./.;
-
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              allowBuiltinFetchGit = true;
-            };
-
-            inherit nativeBuildInputs buildInputs;
-
+            pname = "halloy";
+            inherit version nativeBuildInputs buildInputs;
+            strictDeps = true;
             doCheck = false;
 
             meta = {
@@ -84,6 +73,12 @@
               mainProgram = "halloy";
             };
           };
+
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+          halloy = craneLib.buildPackage (commonArgs // {
+            inherit cargoArtifacts;
+          });
 
           halloyApp = pkgs.stdenv.mkDerivation {
             pname = "Halloy";
@@ -108,122 +103,49 @@
 
             meta = halloy.meta;
           };
-        in
-        {
-          default = if isDarwin then halloyApp else halloy;
-          inherit halloy;
-        }
-        // pkgs.lib.optionalAttrs isDarwin { app = halloyApp; }
-      );
 
-      checks = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
-
-          rustToolchain = pkgs.rust-bin.stable.latest.default;
-
-          isDarwin = pkgs.stdenv.isDarwin;
-
-          nativeBuildInputs = [
-            rustToolchain
-            pkgs.pkg-config
-            pkgs.cmake
-          ];
-
-          buildInputs =
-            [
-              pkgs.openssl
-              pkgs.xz
-            ]
-            ++ pkgs.lib.optionals isDarwin [
-              pkgs.apple-sdk_15
-            ]
-            ++ pkgs.lib.optionals (!isDarwin) [
-              pkgs.wayland
-              pkgs.libxkbcommon
-              pkgs.vulkan-loader
-              pkgs.xorg.libX11
-              pkgs.xorg.libXcursor
-              pkgs.xorg.libXrandr
-              pkgs.xorg.libXi
-            ];
-        in
-        {
-          cargo-check = pkgs.rustPlatform.buildRustPackage {
+          cargoCheck = craneLib.mkCargoDerivation (commonArgs // {
             pname = "halloy-check";
-            version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
-            src = pkgs.lib.cleanSource ./.;
+            inherit cargoArtifacts;
+            doInstallCargoArtifacts = false;
 
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              allowBuiltinFetchGit = true;
-            };
-
-            inherit nativeBuildInputs buildInputs;
-
-            # Only run cargo check, don't build
-            buildPhase = ''
-              cargo check --release
+            buildPhaseCargoCommand = ''
+              cargo check --release --locked
             '';
 
-            installPhase = ''
+            installPhaseCommand = ''
               mkdir -p $out
               touch $out/ok
             '';
+          });
 
-            doCheck = false;
-          };
-        }
-      );
+          devShell = craneLib.devShell {
+            inherit nativeBuildInputs buildInputs;
 
-      devShells = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
-
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-            extensions = [
-              "rust-src"
-              "rust-analyzer"
+            packages = [
+              pkgs.rust-analyzer
             ];
-          };
 
-          isDarwin = pkgs.stdenv.isDarwin;
+            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+          };
         in
         {
-          default = pkgs.mkShell {
-            nativeBuildInputs = [
-              rustToolchain
-              pkgs.pkg-config
-              pkgs.cmake
-            ];
-
-            buildInputs =
-              [
-                pkgs.openssl
-                pkgs.xz
-              ]
-              ++ pkgs.lib.optionals isDarwin [
-                pkgs.apple-sdk_15
-              ]
-              ++ pkgs.lib.optionals (!isDarwin) [
-                pkgs.wayland
-                pkgs.libxkbcommon
-                pkgs.vulkan-loader
-                pkgs.xorg.libX11
-                pkgs.xorg.libXcursor
-                pkgs.xorg.libXrandr
-                pkgs.xorg.libXi
-              ];
-          };
+          inherit pkgs isDarwin halloy halloyApp cargoCheck devShell;
         }
       );
+    in
+    {
+      packages = nixpkgs.lib.mapAttrs (
+        _: attrs:
+        {
+          default = if attrs.isDarwin then attrs.halloyApp else attrs.halloy;
+          inherit (attrs) halloy;
+        }
+        // attrs.pkgs.lib.optionalAttrs attrs.isDarwin { app = attrs.halloyApp; }
+      ) perSystem;
+
+      checks = nixpkgs.lib.mapAttrs (_: attrs: { cargo-check = attrs.cargoCheck; }) perSystem;
+
+      devShells = nixpkgs.lib.mapAttrs (_: attrs: { default = attrs.devShell; }) perSystem;
     };
 }
