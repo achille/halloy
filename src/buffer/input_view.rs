@@ -1424,13 +1424,16 @@ impl State {
 
         let remaining_lines = lines.split_off(send_count);
 
-        let (send_task, event) = if line_count > 1 {
-            self.send_input_line_batch(lines, buffer, clients, history, config)
-        } else if let Some(line) = lines.pop_front() {
-            self.send_input_line(line, buffer, clients, history, config)
-        } else {
-            return (Task::none(), None);
-        };
+        let (send_task, event) =
+            if should_send_input_line_batch(send_count, line_count) {
+                self.send_input_line_batch(
+                    lines, buffer, clients, history, config,
+                )
+            } else if let Some(line) = lines.pop_front() {
+                self.send_input_line(line, buffer, clients, history, config)
+            } else {
+                return (Task::none(), None);
+            };
 
         if remaining_lines.is_empty() {
             return (send_task, event);
@@ -2287,6 +2290,10 @@ impl State {
     }
 }
 
+fn should_send_input_line_batch(send_count: usize, line_count: usize) -> bool {
+    send_count > 1 || line_count > 1
+}
+
 fn input_lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n')
 }
@@ -2320,5 +2327,17 @@ fn show_while_typing(error: &input::Error) -> bool {
             | command::Error::Disconnected
             | command::Error::NotInChannel,
         ) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_send_input_line_batch;
+
+    #[test]
+    fn sends_batch_when_multiple_lines_are_selected() {
+        assert!(should_send_input_line_batch(2, 0));
+        assert!(should_send_input_line_batch(1, 2));
+        assert!(!should_send_input_line_batch(1, 1));
     }
 }
