@@ -10,13 +10,16 @@ pub use self::message::Message;
 pub use self::mode::Mode;
 pub use self::notification::Notification;
 pub use self::pane::Pane;
+#[cfg(feature = "gui")]
 pub use self::preview::Preview;
 pub use self::server::Server;
+#[cfg(feature = "gui")]
 pub use self::shortcut::Shortcut;
 pub use self::target::Target;
 pub use self::url::Url;
 pub use self::user::User;
 pub use self::version::Version;
+#[cfg(feature = "gui")]
 pub use self::window::Window;
 
 pub mod appearance;
@@ -43,11 +46,13 @@ pub mod message;
 pub mod mode;
 pub mod notification;
 pub mod pane;
+#[cfg(feature = "gui")]
 pub mod preview;
 pub mod rate_limit;
 pub mod reaction;
 pub mod serde;
 pub mod server;
+#[cfg(feature = "gui")]
 pub mod shortcut;
 pub mod stream;
 pub mod target;
@@ -56,4 +61,5 @@ pub mod url;
 pub mod user;
 pub mod version;
 pub mod whois;
+#[cfg(feature = "gui")]
 pub mod window;

@@ -2,13 +2,12 @@ use core::fmt;
 use std::str::FromStr;
 
 use chrono::Locale;
-use iced_core::Color as IcedColor;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub mod timestamp;
 
 pub use self::timestamp::Timestamp;
-use crate::appearance::theme::hex_to_color;
+use crate::appearance::theme::{Color as ThemeColor, hex_to_color};
 use crate::serde::deserialize_strftime_date;
 use crate::target::{self, Target};
 use crate::{Server, channel, config, message};
@@ -246,7 +245,7 @@ pub enum Color {
     Solid,
     #[default]
     Unique,
-    Palette(Vec<IcedColor>),
+    Palette(Vec<ThemeColor>),
 }
 
 impl<'de> Deserialize<'de> for Color {

@@ -2,12 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::format::SecondsFormat;
 use chrono::{DateTime, Local, NaiveDate, Utc};
-use iced::Color;
 use serde::{Deserialize, Deserializer};
 
 pub use self::channel::{Channel, ChannelNameCasing};
 pub use self::typing::{Animation, Style, Typing};
-pub use crate::appearance::theme::{alpha_color, alpha_color_calculate};
+pub use crate::appearance::theme::{Color, alpha_color, alpha_color_calculate};
 use crate::config::buffer::nickname::Nickname;
 use crate::config::buffer::text_input::TextInput;
 use crate::config::inclusivities::{

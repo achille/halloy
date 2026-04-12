@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 use std::{fmt, mem};
 
+#[cfg(feature = "gui")]
 use iced_core::color;
 use serde::{Deserialize, Serialize};
 
 pub use self::encode::encode;
+#[cfg(feature = "gui")]
 use crate::appearance::theme;
 
 pub mod encode;
@@ -729,6 +731,7 @@ impl Color {
         }
     }
 
+    #[cfg(feature = "gui")]
     pub fn into_iced(self, styles: &theme::Styles) -> Option<iced_core::Color> {
         match self {
             Color::White => styles.formatting.white.or(Some(color!(0xffffff))),

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use base64::Engine;
-use iced_core::Color;
 use palette::rgb::{Rgb, Rgba};
 use palette::{FromColor, Hsva, Okhsl, Srgba};
 use rand::prelude::*;
@@ -10,6 +9,55 @@ use rand_chacha::ChaChaRng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use tokio::fs;
+
+#[cfg(feature = "gui")]
+pub use iced_core::Color;
+
+#[cfg(not(feature = "gui"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+#[cfg(not(feature = "gui"))]
+impl Color {
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+
+    pub fn from_rgb8(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            r: f32::from(r) / 255.0,
+            g: f32::from(g) / 255.0,
+            b: f32::from(b) / 255.0,
+            a: 1.0,
+        }
+    }
+
+    pub fn from_rgba8(r: u8, g: u8, b: u8, a: f32) -> Self {
+        Self {
+            r: f32::from(r) / 255.0,
+            g: f32::from(g) / 255.0,
+            b: f32::from(b) / 255.0,
+            a,
+        }
+    }
+
+    pub fn into_rgba8(self) -> [u8; 4] {
+        [
+            (self.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (self.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (self.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (self.a.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ]
+    }
+}
 
 const DEFAULT_THEME_NAME: &str = "Ferra";
 const DEFAULT_THEME_CONTENT: &str =
@@ -620,8 +668,9 @@ fn to_color(rgba: Rgba) -> Color {
 }
 
 mod color_serde {
-    use iced_core::Color;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::Color;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Color, D::Error>
     where
@@ -641,8 +690,9 @@ mod color_serde {
 }
 
 mod color_serde_maybe {
-    use iced_core::Color;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::Color;
 
     pub fn deserialize<'de, D>(
         deserializer: D,
@@ -667,10 +717,9 @@ mod color_serde_maybe {
 }
 
 mod binary {
-    use iced_core::Color;
     use strum::{IntoEnumIterator, VariantArray};
 
-    use super::{Buffer, Buttons, Formatting, General, Styles, Text};
+    use super::{Buffer, Buttons, Color, Formatting, General, Styles, Text};
 
     pub fn encode(styles: &Styles) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(Tag::VARIANTS.len() * (1 + 4));

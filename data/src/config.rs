@@ -4,6 +4,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::{str, string};
 
+#[cfg(feature = "gui")]
 use iced_core::font;
 use indexmap::IndexMap;
 use rand::prelude::*;
@@ -19,6 +20,7 @@ pub use self::context_menu::ContextMenu;
 pub use self::ctcp::Ctcp;
 pub use self::file_transfer::FileTransfer;
 pub use self::highlights::Highlights;
+#[cfg(feature = "gui")]
 pub use self::keys::Keyboard;
 pub use self::logs::Logs;
 pub use self::notification::Notifications;
@@ -45,6 +47,7 @@ pub mod ctcp;
 pub mod file_transfer;
 pub mod highlights;
 pub mod inclusivities;
+#[cfg(feature = "gui")]
 pub mod keys;
 pub mod logs;
 pub mod notification;
@@ -59,6 +62,22 @@ pub mod window;
 const CONFIG_TEMPLATE: &str = include_str!("../../config.toml");
 const DEFAULT_THEME_NAME: &str = "ferra";
 
+#[cfg(not(feature = "gui"))]
+pub mod font {
+    #[derive(Debug, Copy, Clone)]
+    pub enum Weight {
+        Thin,
+        ExtraLight,
+        Light,
+        Normal,
+        Medium,
+        Semibold,
+        Bold,
+        ExtraBold,
+        Black,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub appearance: Appearance,
@@ -70,6 +89,7 @@ pub struct Config {
     pub buffer: Buffer,
     pub pane: Pane,
     pub sidebar: Sidebar,
+    #[cfg(feature = "gui")]
     pub keyboard: Keyboard,
     pub notifications: Notifications,
     pub file_transfer: FileTransfer,
@@ -96,6 +116,7 @@ impl Default for Config {
             buffer: Buffer::default(),
             pane: Pane::default(),
             sidebar: Sidebar::default(),
+            #[cfg(feature = "gui")]
             keyboard: Keyboard::default(),
             notifications: Notifications::default(),
             file_transfer: FileTransfer::default(),
@@ -355,6 +376,7 @@ impl Config {
             pub buffer: Buffer,
             pub pane: Pane,
             pub sidebar: Sidebar,
+            #[cfg(feature = "gui")]
             pub keyboard: Keyboard,
             pub notifications: Notifications,
             pub file_transfer: FileTransfer,
@@ -381,6 +403,7 @@ impl Config {
                     buffer: Buffer::default(),
                     pane: Pane::default(),
                     sidebar: Sidebar::default(),
+                    #[cfg(feature = "gui")]
                     keyboard: Keyboard::default(),
                     notifications: Notifications::default(),
                     file_transfer: FileTransfer::default(),
@@ -417,6 +440,7 @@ impl Config {
             scale_factor,
             buffer,
             sidebar,
+            #[cfg(feature = "gui")]
             keyboard,
             notifications,
             file_transfer,
@@ -455,6 +479,7 @@ impl Config {
             scale_factor,
             buffer,
             sidebar,
+            #[cfg(feature = "gui")]
             keyboard,
             notifications,
             file_transfer,

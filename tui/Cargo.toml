@@ -1,0 +1,26 @@
+[package]
+name = "halltui"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "halltui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+crossterm = { version = "0.28", features = ["event-stream"] }
+data = { path = "../data", default-features = false }
+futures = { workspace = true }
+irc = { path = "../irc" }
+ratatui = { version = "0.28", features = ["crossterm"] }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = "0.8"
+unicode-width = "0.2"
+
+[lints]
+workspace = true

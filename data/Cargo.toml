@@ -15,6 +15,8 @@ path = "src/bin.rs"
 required-features = ["message_tests"]
 
 [features]
+default = ["gui"]
+gui = ["iced", "iced_core", "iced_wgpu"]
 tor = ["irc/tor"]
 message_tests = ["iced/tokio"]
 
@@ -39,7 +41,7 @@ log = { workspace = true }
 nucleo-matcher = { workspace = true }
 reqwest = { workspace = true }
 const_format = { workspace = true }
-iced = { workspace = true, features = [
+iced = { workspace = true, optional = true, features = [
     "sysinfo",
     "tokio",
     "wayland",
@@ -52,8 +54,8 @@ xdg = "3.0.0"
 flate2 = "1.0"
 hex = "0.4.3"
 percent-encoding = "2.3.2"
-iced_core = "0.15.0-dev"
-iced_wgpu = "0.15.0-dev"
+iced_core = { version = "0.15.0-dev", optional = true }
+iced_wgpu = { version = "0.15.0-dev", optional = true }
 indexmap = { version = "2.13", features = ["std", "serde"] }
 seahash = "4.1.0"
 serde_json = "1.0"
